@@ -1751,23 +1751,18 @@ polling_stop_event = threading.Event()
 
 def run_bot_with_retry(token):
     """Run the bot polling with automatic retry and restart support."""
+    global bot_restart_flag, bot_application   # <--- declare both globals at the top
+
     while True:
         # Check if we need to restart (new token)
-        global bot_restart_flag
         if bot_restart_flag:
             logger.info("🔄 Restarting bot with new settings...")
             bot_restart_flag = False
             # Stop the current polling gracefully
             if bot_application:
                 logger.info("Stopping current bot instance...")
-                try:
-                    # We cannot easily stop run_polling from outside, so we rely on the loop to break
-                    # Instead, we'll raise an exception or use a flag.
-                    # The easiest: just return and let the outer loop restart.
-                    return
-                except:
-                    pass
-            # The function will be called again from the outer loop
+                # We'll just return and let the outer loop restart
+                return
 
         try:
             logger.info("🔄 Starting bot polling...")
@@ -1784,7 +1779,6 @@ def run_bot_with_retry(token):
             logger.info(f"✅ Bot connected: @{me.username}")
 
             # Store reference globally for restart
-            global bot_application
             bot_application = app
 
             # Run polling (blocking)
