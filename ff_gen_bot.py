@@ -11,6 +11,7 @@ import base64
 import codecs
 import re
 import logging
+import asyncio
 from datetime import datetime
 from collections import deque
 from flask import Flask, render_template_string, jsonify, request
@@ -179,7 +180,6 @@ def get_proxies():
     if TOR_AVAILABLE:
         return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
     # If Tor is not available, we raise an exception to avoid using broken proxies
-    # You can choose to fallback to direct, but we'll keep it strict to force Tor.
     raise RuntimeError("Tor is not available. Cannot create accounts without IP rotation.")
 
 # ---------- Session pool ----------
@@ -1742,71 +1742,99 @@ def api_progress(job_id):
 web_jobs = {}
 
 # =======================================================
-#  BOT ENGINE – runs in main thread, with restart support
+#  BOT ENGINE – with fresh event loop on each restart
 # =======================================================
 
 bot_restart_flag = False
 bot_application = None
-polling_stop_event = threading.Event()
 
-def run_bot_with_retry(token):
-    """Run the bot polling with automatic retry and restart support."""
-    global bot_restart_flag, bot_application   # <--- declare both globals at the top
-
-    while True:
-        # Check if we need to restart (new token)
-        if bot_restart_flag:
-            logger.info("🔄 Restarting bot with new settings...")
-            bot_restart_flag = False
-            # Stop the current polling gracefully
-            if bot_application:
-                logger.info("Stopping current bot instance...")
-                # We'll just return and let the outer loop restart
-                return
-
+def run_bot_once(token):
+    """Run the bot once with a fresh event loop. Returns True if it should restart."""
+    global bot_restart_flag, bot_application
+    
+    # Check if we need to restart before even starting
+    if bot_restart_flag:
+        bot_restart_flag = False
+        return True  # signal restart
+    
+    try:
+        logger.info("🔄 Starting bot polling...")
+        
+        # Create a NEW event loop for this run
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Build the application
+        app = Application.builder().token(token).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("gen", generate))
+        app.add_handler(CommandHandler("status", status))
+        app.add_handler(CommandHandler("stop", stop_generation))
+        app.add_handler(CommandHandler("download", download))
+        
+        # Validate token (run in the new loop)
+        me = loop.run_until_complete(app.bot.get_me())
+        logger.info(f"✅ Bot connected: @{me.username}")
+        
+        bot_application = app
+        
+        # Run polling with close_loop=False so we control the loop lifecycle
+        loop.run_until_complete(app.initialize())
+        loop.run_until_complete(app.start())
+        loop.run_until_complete(app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        ))
+        
+        # Keep the loop running until stopped
         try:
-            logger.info("🔄 Starting bot polling...")
-            app = Application.builder().token(token).build()
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(CommandHandler("gen", generate))
-            app.add_handler(CommandHandler("status", status))
-            app.add_handler(CommandHandler("stop", stop_generation))
-            app.add_handler(CommandHandler("download", download))
-
-            # Validate token
-            import asyncio
-            me = asyncio.run(app.bot.get_me())
-            logger.info(f"✅ Bot connected: @{me.username}")
-
-            # Store reference globally for restart
-            bot_application = app
-
-            # Run polling (blocking)
-            app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-            break  # if polling stops normally (e.g., manual stop)
-        except Conflict as e:
-            logger.warning(f"⚠️ Conflict: {e}. Retrying in 10s...")
-            time.sleep(10)
-            continue
-        except Exception as e:
-            logger.error(f"❌ Polling error: {e}. Retrying in 30s...")
-            time.sleep(30)
-            continue
+            loop.run_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Clean shutdown
+            loop.run_until_complete(app.updater.stop())
+            loop.run_until_complete(app.stop())
+            loop.run_until_complete(app.shutdown())
+            loop.close()
+        
+        # If we get here, polling stopped normally
+        logger.info("Bot polling stopped normally.")
+        return False  # don't restart
+        
+    except Conflict as e:
+        logger.warning(f"⚠️ Conflict: {e}. Will retry...")
+        return True  # restart
+    except Exception as e:
+        logger.error(f"❌ Polling error: {e}. Will retry...")
+        return True  # restart
+    finally:
+        # Ensure the loop is closed if it wasn't already
+        try:
+            if not loop.is_closed():
+                loop.close()
+        except:
+            pass
 
 def bot_worker():
-    """Main bot loop – keeps retrying with the current token."""
+    """Main bot loop – keeps retrying with fresh event loops."""
     while True:
         token = current_settings.get('token', os.environ.get("TELEGRAM_BOT_TOKEN", ""))
         if not token:
             logger.error("❌ No bot token provided. Bot will not run.")
             time.sleep(60)
             continue
-        # Run the bot with the current token; it may return when a restart is requested
-        run_bot_with_retry(token)
-        # If we returned, check if it was due to a restart signal
-        if bot_restart_flag:
+        
+        # Run the bot once – returns True if we should restart
+        should_restart = run_bot_once(token)
+        
+        if should_restart:
+            logger.info("🔄 Restarting bot with fresh event loop...")
+            # Small delay before restart
+            time.sleep(2)
             continue
-        # Otherwise, if polling stopped unexpectedly, wait and retry
+        
+        # If polling stopped without requesting restart, wait and retry
         logger.info("Bot polling stopped. Restarting in 5s...")
         time.sleep(5)
 
@@ -1817,14 +1845,14 @@ def bot_worker():
 def main():
     # Start Flask in a background thread
     def run_flask():
-        port = int(os.environ.get("PORT", 8080))
+        port = int(os.environ.get("PORT", 10000))
         logger.info(f"✅ Web dashboard running on port {port}")
         app.run(host='0.0.0.0', port=port, debug=False, threaded=False, processes=1)
     
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Run the bot in the main thread (so it can be restarted without losing the process)
+    # Run the bot in the main thread
     bot_worker()
 
 if __name__ == "__main__":
