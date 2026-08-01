@@ -13,6 +13,7 @@ import re
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import requests  # for keep‑alive ping
 
 # ---------- Telegram imports ----------
 from telegram import Update
@@ -29,7 +30,6 @@ except:
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -924,7 +924,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_document(document=f, filename=os.path.basename(file_path))
 
 # =======================================================
-#  MAIN – with staypresent keep-alive for Render
+#  MAIN – With built‑in keep‑alive (no staypresent)
 # =======================================================
 
 def run_bot():
@@ -945,26 +945,26 @@ def run_bot():
     
     app.run_polling()
 
-# Attempt to import staypresent – if missing, we'll run the bot directly
-try:
-    import staypresent
-    HAS_STAYPRESENT = True
-except ImportError:
-    HAS_STAYPRESENT = False
+def keep_alive():
+    """Background thread that pings the Render URL every 4 minutes."""
+    app_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not app_url:
+        return  # not on Render, no need
+    while True:
+        try:
+            requests.get(app_url, timeout=5)
+        except:
+            pass
+        time.sleep(240)  # 4 minutes
 
 def main():
-    if HAS_STAYPRESENT:
-        # Render deployment – run HTTP server + bot
-        port = int(os.environ.get("PORT", 8080))
-        staypresent.web.json({"status": "running", "service": "ff-gen-bot"})
-        # Self-ping every 4 minutes to prevent sleep
-        app_url = os.environ.get("RENDER_EXTERNAL_URL")
-        if app_url:
-            staypresent.cron(app_url, interval=240)
-        staypresent.run("ff_gen_bot:run_bot", port=port, restart_on_crash=True)
-    else:
-        # Local or other platform – just run the bot
-        run_bot()
+    # Start keep‑alive thread if on Render
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        threading.Thread(target=keep_alive, daemon=True).start()
+        print("✅ Keep‑alive started – pinging every 240s")
+    
+    # Run the bot (this blocks forever)
+    run_bot()
 
 if __name__ == "__main__":
     main()
