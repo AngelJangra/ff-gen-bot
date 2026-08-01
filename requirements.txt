@@ -1,0 +1,6 @@
+requests
+pycryptodome
+pysocks
+python-cfonts
+python-telegram-bot
+staypresent
