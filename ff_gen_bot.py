@@ -175,7 +175,7 @@ def get_proxies():
         return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
     raise RuntimeError("Tor is not available.")
 
-# ---------- Session pool ----------
+# ---------- Session pool (with increased timeouts) ----------
 session_pool = []
 SESSION_POOL_SIZE = ThReAdS
 
@@ -190,7 +190,7 @@ def init_session_pool():
             logger.error(f"❌ Failed to set proxy: {e}")
             raise
         session.verify = False
-        session.timeout = 10
+        session.timeout = 30  # increased from 10
         session_pool.append(session)
     logger.info("✅ Session pool initialized.")
 
@@ -292,7 +292,7 @@ def Pro(data):
             fields[field_num] = value
     return fields
 
-# ---------- Garena API calls ----------
+# ---------- Garena API calls with increased timeouts ----------
 def RoFl(session, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest:register"
     payload = {"app_id": 100067, "client_type": 2, "password": password, "source": 2}
@@ -304,7 +304,7 @@ def RoFl(session, password):
         "Authorization": f"Signature {signature}",
         "Content-Type": "application/json; charset=utf-8"
     }
-    resp = session.post(url, data=json_body, headers=headers, timeout=10)
+    resp = session.post(url, data=json_body, headers=headers, timeout=30)  # increased timeout
     if resp.status_code == 200:
         data = resp.json()
         if data.get("code") == 0:
@@ -360,11 +360,10 @@ def wOw(func, session, *args, max_retries=3, **kwargs):
         try:
             return func(session, *args, **kwargs)
         except Exception as e:
-            # We now properly log the reason for the retry to avoid silent failures
             logger.warning(f"⚠️ [wOw] Retry {attempt+1}/{max_retries} due to: {repr(e)}")
             if attempt == max_retries - 1:
                 raise
-            time.sleep(0.5)
+            time.sleep(1.5)  # increased sleep between retries
     return None
 
 def hAhA(session, password):
@@ -382,7 +381,7 @@ def lMaO(session, uid, password):
     }
     headers = {"User-Agent": sUs(), "Content-Type": "application/json"}
     try:
-        resp = session.post(url, json=payload, headers=headers, timeout=10)
+        resp = session.post(url, json=payload, headers=headers, timeout=30)  # increased timeout
         if resp.status_code != 200:
             logger.error(f"Token grant failed: status {resp.status_code}, body: {resp.text}")
             resp.raise_for_status()
@@ -394,7 +393,7 @@ def lMaO(session, uid, password):
         logger.error(f"lMaO exception: {e}")
         raise
 
-# ---------- FIXED gG function (Authorization header now includes token) ----------
+# ---------- Fixed gG function with increased timeout ----------
 def gG(session, name, access_token, open_id, region, is_ghost=False):
     global cOnSeCuTiVe
     url = "https://loginbp.ggpolarbear.com/MajorRegister"
@@ -424,7 +423,6 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
     
-    # FIX: Include the access_token in the Authorization header
     headers = {
         "Accept-Encoding": "gzip",
         "Authorization": f"Bearer {access_token}",
@@ -439,7 +437,7 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
     }
     
     try:
-        resp = session.post(url, headers=headers, data=encrypted_payload, timeout=15)
+        resp = session.post(url, headers=headers, data=encrypted_payload, timeout=30)  # increased timeout
         if resp.status_code != 200:
             logger.error(f"MajorRegister failed: status {resp.status_code}, body: {resp.text}")
             resp.raise_for_status()
@@ -545,7 +543,7 @@ def nIcE(session, access_token, open_id, region, lang_code):
         "X-GA": "v1 1", 
         "X-Unity-Version": "2018.4."
     }
-    resp = session.post(url, headers=headers, data=encrypted, timeout=15)
+    resp = session.post(url, headers=headers, data=encrypted, timeout=30)  # increased timeout
     resp.raise_for_status()
     decoded = Pro(resp.content)
     jwt_token = decoded.get(8)
@@ -568,7 +566,7 @@ def dUdE(session, region_code, jwt_token):
         "Expect": "100-continue", "ReleaseVersion": "OB54",
         "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
     }
-    resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
+    resp = session.post(url, headers=headers, data=encrypted_payload, timeout=30)  # increased timeout
     return resp.status_code == 200
 
 def bYe(session, jwt_token, client_url):
@@ -653,7 +651,7 @@ def bYe(session, jwt_token, client_url):
     }
     
     try:
-        resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
+        resp = session.post(url, headers=headers, data=encrypted_payload, timeout=30)  # increased timeout
         return resp.status_code == 200
     except:
         return False
