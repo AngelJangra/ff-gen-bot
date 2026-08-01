@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import requests  # for keep‑alive ping
+from flask import Flask, render_template_string, jsonify, request
 
 # ---------- Telegram imports ----------
 from telegram import Update
@@ -30,6 +30,7 @@ except:
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
+import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -37,13 +38,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #  GENERATOR CONFIG – REBRANDED TO POPPY
 # =======================================================
 
-ReGiOn = "IND"                     # Default region – change if needed
-NiCkNaMe = "POPPY"                 # Nickname prefix
-PaSsWoRd = "POPPY"                 # Password prefix
-ToTaL = 100                        # Default total (user can override)
-ThReAdS = 50                       # Default threads (user can override)
-GhOsT = False                      # Set True for region‑free accounts
-AuToAcT = True                     # Auto‑activate accounts
+ReGiOn = "IND"
+NiCkNaMe = "POPPY"
+PaSsWoRd = "POPPY"
+ToTaL = 100
+ThReAdS = 50
+GhOsT = False
+AuToAcT = True
 
 aEsKeY = bytes([89,103,38,116,99,37,68,69,117,104,54,37,90,99,94,56])
 aEsIv = bytes([54,111,121,90,68,114,50,50,69,51,121,99,104,106,77,37])
@@ -62,24 +63,10 @@ cOnSeCuTiVe = 0
 pRiNtLoCk = threading.Lock()
 iPlOcK = threading.Lock()
 
-INDIAN_CARRIERS = [
-    "Jio", "Airtel", "Vodafone Idea", "BSNL", "MTNL",
-    "Reliance Jio", "Bharti Airtel", "Vi", "Idea Cellular"
-]
-INDIAN_CITIES = [
-    "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai",
-    "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow",
-    "Kanpur", "Nagpur", "Indore", "Bhopal", "Visakhapatnam",
-    "Patna", "Vadodara", "Surat", "Rajkot", "Chandigarh"
-]
-INDIAN_DEVICES = [
-    "Asus ASUS_AI2401_A", "Samsung SM-G998B", "OnePlus 9 Pro",
-    "Xiaomi Mi 11", "Google Pixel 6", "Realme GT", "Vivo X70 Pro",
-    "Oppo Find X3", "Motorola Edge 20", "Samsung SM-M515F",
-    "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"
-]
+INDIAN_CARRIERS = ["Jio", "Airtel", "Vodafone Idea", "BSNL", "MTNL", "Reliance Jio", "Bharti Airtel", "Vi", "Idea Cellular"]
+INDIAN_CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow", "Kanpur", "Nagpur", "Indore", "Bhopal", "Visakhapatnam", "Patna", "Vadodara", "Surat", "Rajkot", "Chandigarh"]
+INDIAN_DEVICES = ["Asus ASUS_AI2401_A", "Samsung SM-G998B", "OnePlus 9 Pro", "Xiaomi Mi 11", "Google Pixel 6", "Realme GT", "Vivo X70 Pro", "Oppo Find X3", "Motorola Edge 20", "Samsung SM-M515F", "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"]
 
-# ---------- Tor integration ----------
 tor_process = None
 IP_ROTATION_INTERVAL = 15
 ACCOUNT_COUNTER_FOR_IP_ROTATION = 0
@@ -119,12 +106,8 @@ def renew_tor_ip():
         return False
 
 def get_proxies():
-    return {
-        'http': 'socks5h://127.0.0.1:9050',
-        'https': 'socks5h://127.0.0.1:9050'
-    }
+    return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
 
-# ---------- Session pool ----------
 session_pool = []
 SESSION_POOL_SIZE = ThReAdS
 
@@ -140,7 +123,6 @@ def init_session_pool():
 def get_pool_session():
     return random.choice(session_pool)
 
-# ---------- Protobuf-like packing and encryption ----------
 def FF(value):
     out = []
     while True:
@@ -233,7 +215,6 @@ def Pro(data):
             fields[field_num] = value
     return fields
 
-# ---------- Garena API calls ----------
 def RoFl(session, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest:register"
     payload = {"app_id": 100067, "client_type": 2, "password": password, "source": 2}
@@ -311,10 +292,7 @@ def hAhA(session, password):
 
 def lMaO(session, uid, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest/token:grant"
-    payload = {
-        "client_id":100067, "client_secret":cLiEnTsEcReT, "client_type":2,
-        "password":password, "response_type":"token", "uid":uid
-    }
+    payload = {"client_id":100067, "client_secret":cLiEnTsEcReT, "client_type":2, "password":password, "response_type":"token", "uid":uid}
     headers = {"User-Agent": sUs(), "Content-Type": "application/json"}
     resp = session.post(url, json=payload, headers=headers, timeout=10)
     resp.raise_for_status()
@@ -335,19 +313,10 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
     encoded_result = fInE(open_id)
     field_unicode = yAy(encoded_result)
     field_bytes = codecs.decode(field_unicode, 'unicode_escape').encode('latin1')
-    fields_dict = {
-        "1": name, "2": access_token, "3": open_id,
-        "5": 102000007, "6": 4, "7": 1, "13": 1,
-        "14": field_bytes, "15": lang_code, "16": 2
-    }
+    fields_dict = {"1": name, "2": access_token, "3": open_id, "5": 102000007, "6": 4, "7": 1, "13": 1, "14": field_bytes, "15": lang_code, "16": 2}
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
-    headers = {
-        "Accept-Encoding": "gzip", "Authorization": "Bearer", "Connection": "Keep-Alive",
-        "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue",
-        "Host": host, "ReleaseVersion": "OB54",
-        "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
-    }
+    headers = {"Accept-Encoding": "gzip", "Authorization": "Bearer", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "Host": host, "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=15)
         resp.raise_for_status()
@@ -394,44 +363,7 @@ def nIcE(session, access_token, open_id, region, lang_code):
         data = v.encode() if isinstance(v, str) else v
         return qT((f << 3) | 2) + qT(len(data)) + data
     
-    fields = {
-        3: now_str,
-        4: "free fire",
-        5: 1,
-        7: "1.126.5",
-        8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)",
-        9: "Handheld",
-        10: carrier,
-        11: "WIFI",
-        17: gpu,
-        18: "OpenGL ES 3.0",
-        19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603",
-        20: ip,
-        21: lang_code,
-        22: open_id,
-        23: 4,
-        24: "Handheld",
-        25: device_model,
-        26: region.upper(),
-        29: access_token,
-        33: carrier,
-        34: "WIFI",
-        37: "7428b253defc164018c604a1ebbfebdf",
-        73: "/data/app/com.dts.freefireth-1/lib/arm",
-        75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk",
-        76: 2,
-        78: 2,
-        79: 2,
-        83: "OpenGLES2",
-        85: city,
-        87: "android",
-        88: "KqsHTywQqGHMgPbDY9P2mhkxXj/beObk/TFNpmgaucQwxyLu9hA478WEQCV0Mgaz9UivYUPpKNwPzgZhvDhSsUDMAFY=",
-        90: '{"cur_rate":null,"support_etc2":false}',
-        97: 1,
-        98: 1,
-        99: "4",
-        100: "4"
-    }
+    fields = {3: now_str, 4: "free fire", 5: 1, 7: "1.126.5", 8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)", 9: "Handheld", 10: carrier, 11: "WIFI", 17: gpu, 18: "OpenGL ES 3.0", 19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603", 20: ip, 21: lang_code, 22: open_id, 23: 4, 24: "Handheld", 25: device_model, 26: region.upper(), 29: access_token, 33: carrier, 34: "WIFI", 37: "7428b253defc164018c604a1ebbfebdf", 73: "/data/app/com.dts.freefireth-1/lib/arm", 75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk", 76: 2, 78: 2, 79: 2, 83: "OpenGLES2", 85: city, 87: "android", 88: "KqsHTywQqGHMgPbDY9P2mhkxXj/beObk/TFNpmgaucQwxyLu9hA478WEQCV0Mgaz9UivYUPpKNwPzgZhvDhSsUDMAFY=", 90: '{"cur_rate":null,"support_etc2":false}', 97: 1, 98: 1, 99: "4", 100: "4"}
     
     packet = b''
     for f, v in fields.items():
@@ -443,16 +375,7 @@ def nIcE(session, access_token, open_id, region, lang_code):
             packet += xX(f, v)
     
     encrypted = Noob(packet)
-    headers = {
-        "Accept-Encoding": "gzip", 
-        "Connection": "Keep-Alive",
-        "Content-Type": "application/x-www-form-urlencoded", 
-        "Expect": "100-continue",
-        "ReleaseVersion": "OB54", 
-        "User-Agent": bRuH(),
-        "X-GA": "v1 1", 
-        "X-Unity-Version": "2018.4."
-    }
+    headers = {"Accept-Encoding": "gzip", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
     resp = session.post(url, headers=headers, data=encrypted, timeout=15)
     resp.raise_for_status()
     decoded = Pro(resp.content)
@@ -470,12 +393,7 @@ def dUdE(session, region_code, jwt_token):
     fields_dict = {"1": region_code}
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
-    headers = {
-        "Accept-Encoding": "gzip", "Authorization": f"Bearer {jwt_token}",
-        "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded",
-        "Expect": "100-continue", "ReleaseVersion": "OB54",
-        "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
-    }
+    headers = {"Accept-Encoding": "gzip", "Authorization": f"Bearer {jwt_token}", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
     resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
     return resp.status_code == 200
 
@@ -506,37 +424,7 @@ def bYe(session, jwt_token, client_url):
         data = v.encode() if isinstance(v, str) else v
         return qT((f << 3) | 2) + qT(len(data)) + data
     
-    fields = {
-        3: now_str,
-        4: "free fire",
-        5: 1,
-        7: "1.126.5",
-        8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)",
-        9: "Handheld",
-        10: carrier,
-        11: "WIFI",
-        17: gpu,
-        18: "OpenGL ES 3.0",
-        19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603",
-        20: ip,
-        21: "en",
-        22: open_id,
-        23: 4,
-        24: "Handheld",
-        25: device_model,
-        26: "IND",
-        29: jwt_token,
-        33: carrier,
-        34: "WIFI",
-        37: "7428b253defc164018c604a1ebbfebdf",
-        73: "/data/app/com.dts.freefireth-1/lib/arm",
-        75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk",
-        83: "OpenGLES2",
-        85: city,
-        87: "android",
-        88: "KqsHT8nWdkA7u/m7k8vg2H5FgrCGa4lfww3nHBGRHRPwDFV4LyCj8sT23O/P6K06qC3MOLZRThwWwul+g2goHwtQJy8=",
-        90: '{"cur_rate":null,"support_etc2":false}'
-    }
+    fields = {3: now_str, 4: "free fire", 5: 1, 7: "1.126.5", 8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)", 9: "Handheld", 10: carrier, 11: "WIFI", 17: gpu, 18: "OpenGL ES 3.0", 19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603", 20: ip, 21: "en", 22: open_id, 23: 4, 24: "Handheld", 25: device_model, 26: "IND", 29: jwt_token, 33: carrier, 34: "WIFI", 37: "7428b253defc164018c604a1ebbfebdf", 73: "/data/app/com.dts.freefireth-1/lib/arm", 75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk", 83: "OpenGLES2", 85: city, 87: "android", 88: "KqsHT8nWdkA7u/m7k8vg2H5FgrCGa4lfww3nHBGRHRPwDFV4LyCj8sT23O/P6K06qC3MOLZRThwWwul+g2goHwtQJy8=", 90: '{"cur_rate":null,"support_etc2":false}'}
     
     packet = b''
     for f, v in fields.items():
@@ -548,18 +436,7 @@ def bYe(session, jwt_token, client_url):
             packet += xX(f, v)
     
     encrypted_payload = Noob(packet)
-    
-    headers = {
-        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 12)",
-        'Connection': "Keep-Alive",
-        'Accept-Encoding': "gzip",
-        'Content-Type': "application/x-www-form-urlencoded",
-        'Authorization': f"Bearer {jwt_token}",
-        'X-Unity-Version': "2018.4.11f1",
-        'X-GA': "v1 1",
-        'ReleaseVersion': "OB54"
-    }
-    
+    headers = {'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 12)", 'Connection': "Keep-Alive", 'Accept-Encoding': "gzip", 'Content-Type': "application/x-www-form-urlencoded", 'Authorization': f"Bearer {jwt_token}", 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"}
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
         return resp.status_code == 200
@@ -730,14 +607,7 @@ class AcCoUnTcReAtOr:
             final_region = lock_region if lock_region and not self.ghost else "GHOST"
             stored_password = store_pass
             
-            acc = {
-                "nickname": nickname,
-                "game_uid": account_id,
-                "region": final_region,
-                "uid": str(uid),
-                "password": stored_password,
-                "activated": activated
-            }
+            acc = {"nickname": nickname, "game_uid": account_id, "region": final_region, "uid": str(uid), "password": stored_password, "activated": activated}
             
             with self.results_lock:
                 self.saved_uids.add(uid)
@@ -804,7 +674,6 @@ def banner():
     print(render('POPPY', colors=['red', 'yellow'], align='center'))
     print("FF Generator Bot - Running on Telegram")
 
-# ---------- Command handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔥 *Free Fire Guest Account Generator Bot*\n\n"
@@ -861,15 +730,7 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_path = os.path.join(folder, f"Accounts-{region}.txt")
         user_jobs[user_id]['file_path'] = file_path
     
-    user_jobs[user_id] = {
-        'thread': threading.Thread(target=run_gen),
-        'generator': gen,
-        'done': False,
-        'file_path': None,
-        'region': region,
-        'total': total
-    }
-    
+    user_jobs[user_id] = {'thread': threading.Thread(target=run_gen), 'generator': gen, 'done': False, 'file_path': None, 'region': region, 'total': total}
     user_jobs[user_id]['thread'].start()
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -924,7 +785,438 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_document(document=f, filename=os.path.basename(file_path))
 
 # =======================================================
-#  MAIN – With built‑in keep‑alive (no staypresent)
+#  FLASK WEB DASHBOARD – MODERN UI
+# =======================================================
+
+app = Flask(__name__)
+
+# Global stats
+stats = {
+    'total_accounts': 0,
+    'active_users': 0,
+    'success_rate': 0,
+    'uptime': 0,
+    'start_time': datetime.now()
+}
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POPPY Generator</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0f;
+            color: #e8e8f0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background-image: radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0a0a0f 70%);
+        }
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            background: rgba(20, 20, 35, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 32px;
+            padding: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 22px;
+            color: white;
+            box-shadow: 0 8px 25px rgba(238, 90, 36, 0.3);
+        }
+        .logo h1 {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ffffff, #a0a0c0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0, 255, 150, 0.1);
+            padding: 8px 20px;
+            border-radius: 100px;
+            border: 1px solid rgba(0, 255, 150, 0.2);
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #00ff96;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .status-badge span {
+            font-size: 14px;
+            font-weight: 500;
+            color: #00ff96;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s;
+        }
+        .stat-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+            transform: translateY(-2px);
+        }
+        .stat-card .label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #8888aa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-top: 8px;
+            background: linear-gradient(135deg, #ffffff, #8888bb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #c0c0e0;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 30px;
+        }
+        .controls select, .controls input {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: #e8e8f0;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .controls select:focus, .controls input:focus {
+            border-color: rgba(238, 90, 36, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .controls select option { background: #1a1a2e; }
+        .btn {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            border: none;
+            border-radius: 12px;
+            padding: 14px 24px;
+            color: white;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+        .btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 30px rgba(238, 90, 36, 0.3);
+        }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .logs {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 16px;
+            padding: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .logs::-webkit-scrollbar { width: 6px; }
+        .logs::-webkit-scrollbar-track { background: transparent; }
+        .logs::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .log-entry { padding: 4px 0; color: #8888bb; border-bottom: 1px solid rgba(255,255,255,0.02); }
+        .log-entry .time { color: #555577; margin-right: 12px; }
+        .log-entry .highlight { color: #ff6b6b; }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 13px;
+            color: #444466;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 20px; }
+            .logo h1 { font-size: 20px; }
+            .stat-card .value { font-size: 28px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">P</div>
+                <h1>POPPY Generator</h1>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span>Online</span>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Accounts Generated</div>
+                <div class="value" id="totalAccounts">{{ stats.total_accounts }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Active Users</div>
+                <div class="value" id="activeUsers">{{ stats.active_users }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Success Rate</div>
+                <div class="value" id="successRate">{{ stats.success_rate }}%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Uptime</div>
+                <div class="value" id="uptime">{{ stats.uptime }}</div>
+            </div>
+        </div>
+
+        <div class="section-title">⚡ Quick Generate</div>
+        <div class="controls">
+            <select id="region">
+                {% for r in regions %}
+                <option value="{{ r }}" {% if r == 'IND' %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" id="total" placeholder="Total" value="10" min="1" max="500">
+            <input type="number" id="threads" placeholder="Threads" value="5" min="1" max="50">
+            <button class="btn" id="genBtn" onclick="startGeneration()">▶ Generate</button>
+        </div>
+
+        <div class="section-title">📋 Live Logs</div>
+        <div class="logs" id="logContainer">
+            <div class="log-entry"><span class="time">[System]</span> Bot ready. Waiting for commands...</div>
+        </div>
+
+        <div class="footer">POPPY Generator v2.0 • 24/7 on Render</div>
+    </div>
+
+    <script>
+        const logContainer = document.getElementById('logContainer');
+        const genBtn = document.getElementById('genBtn');
+
+        function addLog(message, highlight = false) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="time">[${time}]</span> ${highlight ? '<span class="highlight">' + message + '</span>' : message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function startGeneration() {
+            const region = document.getElementById('region').value;
+            const total = document.getElementById('total').value;
+            const threads = document.getElementById('threads').value;
+
+            if (!total || total < 1 || total > 500) {
+                addLog('❌ Invalid total. Must be 1-500.', true);
+                return;
+            }
+            if (!threads || threads < 1 || threads > 50) {
+                addLog('❌ Invalid threads. Must be 1-50.', true);
+                return;
+            }
+
+            genBtn.disabled = true;
+            genBtn.textContent = '⏳ Generating...';
+            addLog(`🚀 Starting generation: ${region} | ${total} accounts | ${threads} threads`);
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ region, total: parseInt(total), threads: parseInt(threads) })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    addLog(`✅ Generation started! Job ID: ${data.job_id}`, true);
+                    // Start polling for progress
+                    pollProgress(data.job_id);
+                } else {
+                    addLog(`❌ Error: ${data.error}`, true);
+                    genBtn.disabled = false;
+                    genBtn.textContent = '▶ Generate';
+                }
+            } catch (e) {
+                addLog(`❌ Network error: ${e.message}`, true);
+                genBtn.disabled = false;
+                genBtn.textContent = '▶ Generate';
+            }
+        }
+
+        async function pollProgress(jobId) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/progress/${jobId}`);
+                    const data = await res.json();
+                    if (data.done) {
+                        addLog(`✅ Completed! ${data.total} accounts generated.`, true);
+                        clearInterval(interval);
+                        genBtn.disabled = false;
+                        genBtn.textContent = '▶ Generate';
+                        // Update stats
+                        document.getElementById('totalAccounts').textContent = data.total;
+                    } else {
+                        addLog(`⏳ Progress: ${data.progress}/${data.total} accounts`);
+                    }
+                } catch (e) {
+                    // silent
+                }
+            }, 3000);
+        }
+
+        // Update stats periodically
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('totalAccounts').textContent = data.total_accounts;
+                document.getElementById('activeUsers').textContent = data.active_users;
+                document.getElementById('successRate').textContent = data.success_rate + '%';
+                document.getElementById('uptime').textContent = data.uptime;
+            } catch (e) {}
+        }, 5000);
+    </script>
+</body>
+</html>
+"""
+
+# ---------- Flask Routes ----------
+@app.route('/')
+def index():
+    # Calculate uptime
+    uptime_seconds = int((datetime.now() - stats['start_time']).total_seconds())
+    hours = uptime_seconds // 3600
+    minutes = (uptime_seconds % 3600) // 60
+    stats['uptime'] = f"{hours}h {minutes}m"
+    return render_template_string(HTML_TEMPLATE, stats=stats, regions=rEgIoNlIsT)
+
+@app.route('/api/stats')
+def api_stats():
+    uptime_seconds = int((datetime.now() - stats['start_time']).total_seconds())
+    hours = uptime_seconds // 3600
+    minutes = (uptime_seconds % 3600) // 60
+    return jsonify({
+        'total_accounts': stats['total_accounts'],
+        'active_users': stats['active_users'],
+        'success_rate': stats['success_rate'],
+        'uptime': f"{hours}h {minutes}m"
+    })
+
+@app.route('/api/generate', methods=['POST'])
+def api_generate():
+    data = request.json
+    region = data.get('region', 'IND')
+    total = data.get('total', 10)
+    threads = data.get('threads', 5)
+    
+    # Validate
+    if region not in rEgIoNlIsT:
+        return jsonify({'success': False, 'error': 'Invalid region'})
+    if total < 1 or total > 500:
+        return jsonify({'success': False, 'error': 'Total must be 1-500'})
+    if threads < 1 or threads > 50:
+        return jsonify({'success': False, 'error': 'Threads must be 1-50'})
+    
+    job_id = f"web_{int(time.time())}"
+    stats['active_users'] += 1
+    
+    # Start generation in background
+    def run_web_gen():
+        global ThReAdS
+        ThReAdS = threads
+        gen = AcCoUnTcReAtOr(region, NiCkNaMe, PaSsWoRd, "plain", AuToAcT, total, GhOsT)
+        gen.rUn()
+        stats['total_accounts'] += total
+        stats['active_users'] = max(0, stats['active_users'] - 1)
+        # Store result for progress polling
+        web_jobs[job_id] = {'done': True, 'total': total, 'progress': total}
+    
+    web_jobs[job_id] = {'done': False, 'total': total, 'progress': 0}
+    threading.Thread(target=run_web_gen).start()
+    
+    return jsonify({'success': True, 'job_id': job_id})
+
+@app.route('/api/progress/<job_id>')
+def api_progress(job_id):
+    job = web_jobs.get(job_id)
+    if not job:
+        return jsonify({'done': True, 'total': 0, 'progress': 0})
+    return jsonify({
+        'done': job.get('done', False),
+        'total': job.get('total', 0),
+        'progress': job.get('progress', 0)
+    })
+
+web_jobs = {}
+
+# =======================================================
+#  MAIN – Bot + Web Server
 # =======================================================
 
 def run_bot():
@@ -936,35 +1228,24 @@ def run_bot():
     banner()
     print("Starting Telegram bot...")
     
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("gen", generate))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("stop", stop_generation))
-    app.add_handler(CommandHandler("download", download))
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("gen", generate))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("stop", stop_generation))
+    application.add_handler(CommandHandler("download", download))
     
-    app.run_polling()
-
-def keep_alive():
-    """Background thread that pings the Render URL every 4 minutes."""
-    app_url = os.environ.get("RENDER_EXTERNAL_URL")
-    if not app_url:
-        return  # not on Render, no need
-    while True:
-        try:
-            requests.get(app_url, timeout=5)
-        except:
-            pass
-        time.sleep(240)  # 4 minutes
+    application.run_polling()
 
 def main():
-    # Start keep‑alive thread if on Render
-    if os.environ.get("RENDER_EXTERNAL_URL"):
-        threading.Thread(target=keep_alive, daemon=True).start()
-        print("✅ Keep‑alive started – pinging every 240s")
+    # Start the bot in a background thread
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     
-    # Run the bot (this blocks forever)
-    run_bot()
+    # Run Flask web server
+    port = int(os.environ.get("PORT", 8080))
+    print(f"✅ Web dashboard running on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 if __name__ == "__main__":
     main()
