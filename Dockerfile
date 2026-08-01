@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y tor && rm -rf /var/lib/apt/lists/*
+# Install Tor and essential utilities (procps provides pkill, pgrep)
+RUN apt-get update && apt-get install -y tor procps && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
