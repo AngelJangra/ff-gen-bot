@@ -1351,14 +1351,14 @@ def api_progress(job_id):
 web_jobs = {}
 
 # =======================================================
-#  MAIN – with conflict handling and retry
+#  MAIN – with conflict handling and retry (bot in main thread)
 # =======================================================
 
 def run_bot_with_retry():
     """Run the bot polling with automatic retry on Conflict."""
     TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
-        print("❌ Error: TELEGRAM_BOT_TOKEN not set.")
+        print("❌ Error: TELEGRAM_BOT_TOKEN not set. Bot will not start.")
         return
 
     while True:
@@ -1371,27 +1371,29 @@ def run_bot_with_retry():
             application.add_handler(CommandHandler("stop", stop_generation))
             application.add_handler(CommandHandler("download", download))
 
-            # Run polling with drop_pending_updates to release previous lock
             application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-            break  # exit loop if successful (run_polling blocks until stopped)
+            break  # if polling stops normally, exit loop
         except Conflict as e:
             print(f"⚠️ Conflict detected: {e}. Waiting 10 seconds before retry...")
             time.sleep(10)
             continue
         except Exception as e:
-            print(f"❌ Unexpected error: {e}. Retrying in 30 seconds...")
+            print(f"❌ Bot error: {e}. Retrying in 30 seconds...")
             time.sleep(30)
             continue
 
 def main():
-    # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot_with_retry, daemon=True)
-    bot_thread.start()
+    # Run Flask in a background thread (so it doesn't block the bot)
+    def run_flask():
+        port = int(os.environ.get("PORT", 8080))
+        print(f"✅ Web dashboard running on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=False, processes=1)
+    
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
-    # Run Flask web server (single-threaded to avoid multiple polling attempts)
-    port = int(os.environ.get("PORT", 8080))
-    print(f"✅ Web dashboard running on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=False, processes=1)
+    # Run the bot in the main thread (so any crash is visible)
+    run_bot_with_retry()
 
 if __name__ == "__main__":
     main()
