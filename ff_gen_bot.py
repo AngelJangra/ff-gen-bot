@@ -100,7 +100,7 @@ INDIAN_DEVICES = [
     "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"
 ]
 
-# ---------- Tor integration with robust startup ----------
+# ---------- Tor integration ----------
 tor_process = None
 IP_ROTATION_INTERVAL = 15
 ACCOUNT_COUNTER_FOR_IP_ROTATION = 0
@@ -110,7 +110,6 @@ def start_tor():
     global tor_process, TOR_AVAILABLE
     logger.info("🔄 Attempting to start Tor...")
     try:
-        # Kill any existing tor process (if pkill exists, otherwise skip)
         try:
             subprocess.run(['pkill', '-9', 'tor'], capture_output=True, check=False)
         except FileNotFoundError:
@@ -316,7 +315,7 @@ def RoFl(session, password):
         resp.raise_for_status()
         raise Exception(f"Unexpected response: {resp.text}")
 
-def yEet(length=6, chars=string.ascii_uppercase + string.digits):  # no special chars
+def yEet(length=6, chars=string.ascii_uppercase + string.digits):
     return ''.join(random.choice(chars) for _ in range(length))
 
 def pWe():
@@ -377,7 +376,7 @@ def lMaO(session, uid, password):
         "client_type":2,
         "password":password,
         "response_type":"token",
-        "uid":int(uid)  # ensure integer
+        "uid":int(uid)
     }
     headers = {"User-Agent": sUs(), "Content-Type": "application/json"}
     try:
@@ -406,21 +405,38 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
     field_unicode = yAy(encoded_result)
     field_bytes = codecs.decode(field_unicode, 'unicode_escape').encode('latin1')
     fields_dict = {
-        "1": name, "2": access_token, "3": open_id,
-        "5": 102000007, "6": 4, "7": 1, "13": 1,
-        "14": field_bytes, "15": lang_code, "16": 2
+        "1": name,
+        "2": access_token,
+        "3": open_id,
+        "5": 102000007,
+        "6": 4,
+        "7": 1,
+        "13": 1,
+        "14": field_bytes,
+        "15": lang_code,
+        "16": 2
     }
+    # Log fields for debugging
+    logger.info(f"[gG] name={name}, access_token={access_token[:20]}..., open_id={open_id}, lang_code={lang_code}")
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
     headers = {
-        "Accept-Encoding": "gzip", "Authorization": "Bearer", "Connection": "Keep-Alive",
-        "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue",
-        "Host": host, "ReleaseVersion": "OB54",
-        "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
+        "Accept-Encoding": "gzip",
+        "Authorization": "Bearer",
+        "Connection": "Keep-Alive",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Expect": "100-continue",
+        "Host": host,
+        "ReleaseVersion": "OB54",
+        "User-Agent": bRuH(),
+        "X-GA": "v1 1",
+        "X-Unity-Version": "2018.4."
     }
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=15)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            logger.error(f"MajorRegister failed: status {resp.status_code}, body: {resp.text}")
+            resp.raise_for_status()
         with iPlOcK:
             cOnSeCuTiVe = 0
         return Pro(resp.content)
@@ -694,7 +710,6 @@ class AcCoUnTcReAtOr:
     def gEnPaSs(self):
         r1 = yEet(6)
         r2 = yEet(6)
-        # Purely alphanumeric – no dashes, underscores, or dots
         plain = f"{self.password_prefix}{r1}{r2}"
         return plain, plain
 
@@ -753,6 +768,9 @@ class AcCoUnTcReAtOr:
                     return None
 
             access_token, open_id = wOw(lMaO, session, uid, api_pass)
+            if not access_token or not open_id:
+                logger.error(f"[Thread-{thread_id}] Failed to get access token or open_id.")
+                return None
             logger.info(f"[Thread-{thread_id}] Got access token and open_id.")
 
             reg_resp = wOw(gG, session, self.nickname_prefix, access_token, open_id, self.region, self.ghost)
