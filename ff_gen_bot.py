@@ -39,13 +39,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # =======================================================
 #  LOGGING SETUP – capture all logs to a buffer
 # =======================================================
-LOG_BUFFER = deque(maxlen=1000)  # keep last 1000 lines
+LOG_BUFFER = deque(maxlen=1000)
 
 class ListHandler(logging.Handler):
     def emit(self, record):
         LOG_BUFFER.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.format(record)}")
 
-# Configure root logger
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 console = logging.StreamHandler()
@@ -115,23 +114,18 @@ def start_tor():
         try:
             subprocess.run(['pkill', '-9', 'tor'], capture_output=True, check=False)
         except FileNotFoundError:
-            # pkill not available – that's okay, we'll just start fresh
             pass
         time.sleep(1)
-        # Start tor
         tor_process = subprocess.Popen(
             ['tor'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
         )
-        # Wait up to 30 seconds for tor to be ready
         for i in range(30):
             time.sleep(1)
-            # Check if process is still running
             if tor_process.poll() is not None:
                 logger.warning(f"Tor process died early. Attempt {i+1}/30")
-                # Try restarting
                 tor_process = subprocess.Popen(
                     ['tor'],
                     stdout=subprocess.DEVNULL,
@@ -139,7 +133,6 @@ def start_tor():
                     start_new_session=True
                 )
                 continue
-            # Test if SOCKS proxy is responsive
             try:
                 import socket
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -151,7 +144,7 @@ def start_tor():
                 return True
             except:
                 continue
-        logger.warning("⚠️ Tor did not become ready within 30 seconds. Check installation.")
+        logger.warning("⚠️ Tor did not become ready within 30 seconds.")
         TOR_AVAILABLE = False
         return False
     except Exception as e:
@@ -181,7 +174,7 @@ def renew_tor_ip():
 def get_proxies():
     if TOR_AVAILABLE:
         return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-    raise RuntimeError("Tor is not available. Cannot create accounts without IP rotation.")
+    raise RuntimeError("Tor is not available.")
 
 # ---------- Session pool ----------
 session_pool = []
@@ -323,7 +316,7 @@ def RoFl(session, password):
         resp.raise_for_status()
         raise Exception(f"Unexpected response: {resp.text}")
 
-def yEet(length=6, chars=string.ascii_uppercase + string.digits + "-_."):
+def yEet(length=6, chars=string.ascii_uppercase + string.digits):  # no special chars
     return ''.join(random.choice(chars) for _ in range(length))
 
 def pWe():
@@ -379,16 +372,26 @@ def hAhA(session, password):
 def lMaO(session, uid, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest/token:grant"
     payload = {
-        "client_id":100067, "client_secret":cLiEnTsEcReT, "client_type":2,
-        "password":password, "response_type":"token", "uid":uid
+        "client_id":100067,
+        "client_secret":cLiEnTsEcReT,
+        "client_type":2,
+        "password":password,
+        "response_type":"token",
+        "uid":int(uid)  # ensure integer
     }
     headers = {"User-Agent": sUs(), "Content-Type": "application/json"}
-    resp = session.post(url, json=payload, headers=headers, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("code") != 0:
-        raise Exception(f"Token grant failed: {data}")
-    return data["data"]["access_token"], data["data"]["open_id"]
+    try:
+        resp = session.post(url, json=payload, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            logger.error(f"Token grant failed: status {resp.status_code}, body: {resp.text}")
+            resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != 0:
+            raise Exception(f"Token grant error: {data}")
+        return data["data"]["access_token"], data["data"]["open_id"]
+    except Exception as e:
+        logger.error(f"lMaO exception: {e}")
+        raise
 
 def gG(session, name, access_token, open_id, region, is_ghost=False):
     global cOnSeCuTiVe
@@ -691,7 +694,8 @@ class AcCoUnTcReAtOr:
     def gEnPaSs(self):
         r1 = yEet(6)
         r2 = yEet(6)
-        plain = f"{self.password_prefix}_{r1}-POPPY{r2}"
+        # Purely alphanumeric – no dashes, underscores, or dots
+        plain = f"{self.password_prefix}{r1}{r2}"
         return plain, plain
 
     def save_single_account(self, acc):
@@ -1032,7 +1036,7 @@ current_settings = {
     'region': ReGiOn
 }
 
-# ==================== HTML Template with Copy Button ====================
+# ==================== HTML Template ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
