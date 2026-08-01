@@ -3,3 +3,4 @@ pycryptodome
 pysocks
 python-cfonts
 python-telegram-bot
+flask
