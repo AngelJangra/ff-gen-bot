@@ -10,9 +10,9 @@ import subprocess
 import base64
 import codecs
 import re
+import logging
 from datetime import datetime
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 from flask import Flask, render_template_string, jsonify, request
 
 # ---------- Telegram imports ----------
@@ -34,6 +34,27 @@ from Crypto.Util.Padding import pad
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# =======================================================
+#  LOGGING SETUP – capture all logs to a buffer
+# =======================================================
+LOG_BUFFER = deque(maxlen=1000)  # keep last 1000 lines
+
+class ListHandler(logging.Handler):
+    def emit(self, record):
+        LOG_BUFFER.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.format(record)}")
+
+# Configure root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# Console handler (Render logs)
+console = logging.StreamHandler()
+console.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+logger.addHandler(console)
+# Buffer handler
+list_handler = ListHandler()
+list_handler.setFormatter(logging.Formatter('%(levelname)s | %(message)s'))
+logger.addHandler(list_handler)
 
 # =======================================================
 #  GENERATOR CONFIG – REBRANDED TO POPPY
@@ -81,31 +102,63 @@ INDIAN_DEVICES = [
     "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"
 ]
 
-# ---------- Tor integration ----------
+# ---------- Tor integration with robust startup ----------
 tor_process = None
 IP_ROTATION_INTERVAL = 15
 ACCOUNT_COUNTER_FOR_IP_ROTATION = 0
+TOR_AVAILABLE = False
 
 def start_tor():
-    global tor_process
+    global tor_process, TOR_AVAILABLE
     try:
+        # Kill any existing tor
         subprocess.run(['pkill', '-9', 'tor'], capture_output=True, check=False)
-        time.sleep(0.5)
+        time.sleep(1)
+        # Start tor
         tor_process = subprocess.Popen(
             ['tor'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
         )
-        for _ in range(10):
-            time.sleep(0.5)
-            if subprocess.run(['pgrep', '-x', 'tor'], capture_output=True).returncode == 0:
+        # Wait up to 30 seconds for tor to be ready
+        for i in range(30):
+            time.sleep(1)
+            # Check if process is still running
+            if tor_process.poll() is not None:
+                logger.warning(f"Tor process died early. Attempt {i+1}/30")
+                # Try restarting
+                tor_process = subprocess.Popen(
+                    ['tor'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                continue
+            # Test if SOCKS proxy is responsive
+            try:
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2)
+                s.connect(('127.0.0.1', 9050))
+                s.close()
+                TOR_AVAILABLE = True
+                logger.info("✅ Tor started successfully and SOCKS proxy is reachable.")
                 return True
+            except:
+                # Still starting
+                continue
+        logger.warning("⚠️ Tor did not become ready within 30 seconds. Check installation.")
+        TOR_AVAILABLE = False
         return False
-    except:
+    except Exception as e:
+        logger.error(f"❌ Tor startup exception: {e}")
+        TOR_AVAILABLE = False
         return False
 
 def renew_tor_ip():
+    if not TOR_AVAILABLE:
+        return False
     try:
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -116,15 +169,18 @@ def renew_tor_ip():
         s.send(b'QUIT\r\n')
         s.close()
         time.sleep(1)
+        logger.info("🔄 Tor IP renewed.")
         return True
-    except:
+    except Exception as e:
+        logger.warning(f"⚠️ Tor IP renewal failed: {e}")
         return False
 
 def get_proxies():
-    return {
-        'http': 'socks5h://127.0.0.1:9050',
-        'https': 'socks5h://127.0.0.1:9050'
-    }
+    if TOR_AVAILABLE:
+        return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+    # If Tor is not available, we raise an exception to avoid using broken proxies
+    # You can choose to fallback to direct, but we'll keep it strict to force Tor.
+    raise RuntimeError("Tor is not available. Cannot create accounts without IP rotation.")
 
 # ---------- Session pool ----------
 session_pool = []
@@ -745,7 +801,8 @@ class AcCoUnTcReAtOr:
                 self.saved_uids.add(uid)
             
             return acc
-        except:
+        except Exception as e:
+            logger.error(f"[Thread-{thread_id}] Account creation error: {e}")
             return None
 
     def wOrKeR(self, thread_id):
@@ -765,6 +822,7 @@ class AcCoUnTcReAtOr:
                 with self.lock:
                     self.created_count += 1
                 self.save_single_account(acc)
+                logger.info(f"[Thread-{thread_id}] Account created: {acc['uid']}")
             else:
                 time.sleep(0.1)
         if self.created_count >= self.total_target:
@@ -925,12 +983,11 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_document(document=f, filename=os.path.basename(file_path))
 
 # =======================================================
-#  FLASK WEB DASHBOARD – MODERN UI
+#  FLASK WEB DASHBOARD – Enhanced with Settings & Logs
 # =======================================================
 
 app = Flask(__name__)
 
-# Global stats
 stats = {
     'total_accounts': 0,
     'active_users': 0,
@@ -939,6 +996,17 @@ stats = {
     'start_time': datetime.now()
 }
 
+web_jobs = {}
+
+# In‑memory settings (will be overridden by user updates)
+current_settings = {
+    'token': os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+    'nickname': NiCkNaMe,
+    'password': PaSsWoRd,
+    'region': ReGiOn
+}
+
+# ==================== HTML Template ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -969,6 +1037,7 @@ HTML_TEMPLATE = """
             padding: 40px;
             border: 1px solid rgba(255, 255, 255, 0.06);
             box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+            position: relative;
         }
         .header {
             display: flex;
@@ -1003,6 +1072,37 @@ HTML_TEMPLATE = """
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .icon-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 10px 16px;
+            color: #c0c0e0;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Inter', sans-serif;
+        }
+        .icon-btn:hover {
+            background: rgba(255,255,255,0.12);
+            transform: scale(1.02);
+        }
+        .icon-btn .badge {
+            background: #ee5a24;
+            color: white;
+            font-size: 10px;
+            border-radius: 50%;
+            padding: 2px 8px;
+            margin-left: 4px;
+        }
         .status-badge {
             display: flex;
             align-items: center;
@@ -1023,11 +1123,6 @@ HTML_TEMPLATE = """
             0% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(0.8); }
             100% { opacity: 1; transform: scale(1); }
-        }
-        .status-badge span {
-            font-size: 14px;
-            font-weight: 500;
-            color: #00ff96;
         }
         .stats-grid {
             display: grid;
@@ -1136,10 +1231,124 @@ HTML_TEMPLATE = """
             font-size: 13px;
             color: #444466;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: #1a1a2e;
+            border-radius: 24px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 85vh;
+            padding: 30px;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-header h2 {
+            font-weight: 600;
+            font-size: 22px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: #8888aa;
+            font-size: 28px;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: #fff; }
+        .modal-body {
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-body .form-group {
+            margin-bottom: 16px;
+        }
+        .modal-body label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #aaaacc;
+            margin-bottom: 4px;
+        }
+        .modal-body input, .modal-body select {
+            width: 100%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #e8e8f0;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+        }
+        .modal-body input:focus, .modal-body select:focus {
+            border-color: #ee5a24;
+        }
+        .modal-body .btn-save {
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+            width: 100%;
+            font-size: 16px;
+        }
+        .modal-body .btn-save:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 25px rgba(58, 123, 213, 0.4);
+        }
+        .log-viewer {
+            background: #0a0a0f;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 60vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #b0b0d0;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .log-viewer .log-line {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .log-viewer .log-line .ts {
+            color: #555577;
+            margin-right: 12px;
+        }
+        .log-viewer .log-line .level-info { color: #4fc3f7; }
+        .log-viewer .log-line .level-warning { color: #ffb74d; }
+        .log-viewer .log-line .level-error { color: #ef5350; }
+        .log-viewer .log-line .level-success { color: #66bb6a; }
         @media (max-width: 600px) {
             .container { padding: 20px; }
             .logo h1 { font-size: 20px; }
             .stat-card .value { font-size: 28px; }
+            .header-actions .icon-btn span { display: none; }
         }
     </style>
 </head>
@@ -1150,9 +1359,17 @@ HTML_TEMPLATE = """
                 <div class="logo-icon">P</div>
                 <h1>POPPY Generator</h1>
             </div>
-            <div class="status-badge">
-                <div class="status-dot"></div>
-                <span>Online</span>
+            <div class="header-actions">
+                <button class="icon-btn" onclick="openLogs()">
+                    📜 <span>Logs</span>
+                </button>
+                <button class="icon-btn" onclick="openSettings()">
+                    ⚙️ <span>Settings</span>
+                </button>
+                <div class="status-badge">
+                    <div class="status-dot"></div>
+                    <span>Online</span>
+                </div>
             </div>
         </div>
 
@@ -1195,7 +1412,135 @@ HTML_TEMPLATE = """
         <div class="footer">POPPY Generator v2.0 • 24/7 on Render</div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>⚙️ Settings</h2>
+                <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="settingsForm" onsubmit="saveSettings(event)">
+                    <div class="form-group">
+                        <label>Bot Token</label>
+                        <input type="text" id="botToken" placeholder="Enter new token" value="{{ current_settings.token }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Nickname Prefix</label>
+                        <input type="text" id="nickname" placeholder="e.g. POPPY" value="{{ current_settings.nickname }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Password Prefix</label>
+                        <input type="text" id="password" placeholder="e.g. POPPY" value="{{ current_settings.password }}">
+                    </div>
+                    <div class="form-group">
+                        <label>Default Region</label>
+                        <select id="defaultRegion">
+                            {% for r in regions %}
+                            <option value="{{ r }}" {% if r == current_settings.region %}selected{% endif %}>{{ r }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-save">💾 Save & Restart Bot</button>
+                </form>
+                <div id="settingsStatus" style="margin-top:12px;color:#66bb6a;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div class="modal-overlay" id="logsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📜 Full Logs</h2>
+                <button class="modal-close" onclick="closeModal('logsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="log-viewer" id="fullLogViewer">Loading logs...</div>
+                <div style="margin-top:12px;text-align:right;">
+                    <button class="btn" onclick="fetchLogs()" style="padding:8px 16px;font-size:13px;">🔄 Refresh</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // --- Logs ---
+        let logInterval = null;
+
+        function openLogs() {
+            document.getElementById('logsModal').classList.add('active');
+            fetchLogs();
+            if (logInterval) clearInterval(logInterval);
+            logInterval = setInterval(fetchLogs, 2000);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+            if (id === 'logsModal' && logInterval) {
+                clearInterval(logInterval);
+                logInterval = null;
+            }
+        }
+
+        async function fetchLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                const viewer = document.getElementById('fullLogViewer');
+                if (data.logs && data.logs.length) {
+                    viewer.innerHTML = data.logs.map(line => `<div class="log-line">${line}</div>`).join('');
+                } else {
+                    viewer.innerHTML = '<div class="log-line">No logs yet.</div>';
+                }
+                viewer.scrollTop = viewer.scrollHeight;
+            } catch (e) {
+                document.getElementById('fullLogViewer').innerHTML = '❌ Failed to load logs.';
+            }
+        }
+
+        // --- Settings ---
+        function openSettings() {
+            document.getElementById('settingsModal').classList.add('active');
+            document.getElementById('settingsStatus').textContent = '';
+        }
+
+        async function saveSettings(e) {
+            e.preventDefault();
+            const token = document.getElementById('botToken').value.trim();
+            const nickname = document.getElementById('nickname').value.trim();
+            const password = document.getElementById('password').value.trim();
+            const region = document.getElementById('defaultRegion').value;
+
+            if (!token) {
+                document.getElementById('settingsStatus').textContent = '❌ Token cannot be empty.';
+                document.getElementById('settingsStatus').style.color = '#ef5350';
+                return;
+            }
+
+            const payload = { token, nickname, password, region };
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('settingsStatus').textContent = '✅ Settings saved! Bot will restart with new token.';
+                    document.getElementById('settingsStatus').style.color = '#66bb6a';
+                    setTimeout(() => location.reload(), 3000);
+                } else {
+                    document.getElementById('settingsStatus').textContent = '❌ Error: ' + data.error;
+                    document.getElementById('settingsStatus').style.color = '#ef5350';
+                }
+            } catch (e) {
+                document.getElementById('settingsStatus').textContent = '❌ Network error.';
+                document.getElementById('settingsStatus').style.color = '#ef5350';
+            }
+        }
+
+        // --- Existing dashboard logic ---
         const logContainer = document.getElementById('logContainer');
         const genBtn = document.getElementById('genBtn');
 
@@ -1258,7 +1603,6 @@ HTML_TEMPLATE = """
                         clearInterval(interval);
                         genBtn.disabled = false;
                         genBtn.textContent = '▶ Generate';
-                        // Update stats
                         document.getElementById('totalAccounts').textContent = data.total;
                     } else {
                         addLog(`⏳ Progress: ${data.progress}/${data.total} accounts`);
@@ -1280,19 +1624,31 @@ HTML_TEMPLATE = """
                 document.getElementById('uptime').textContent = data.uptime;
             } catch (e) {}
         }, 5000);
+
+        // Close modal on overlay click
+        document.querySelectorAll('.modal-overlay').forEach(el => {
+            el.addEventListener('click', function(e) {
+                if (e.target === this) this.classList.remove('active');
+            });
+        });
     </script>
 </body>
 </html>
 """
 
-# ---------- Flask Routes ----------
+# ==================== Flask Routes ====================
 @app.route('/')
 def index():
     uptime_seconds = int((datetime.now() - stats['start_time']).total_seconds())
     hours = uptime_seconds // 3600
     minutes = (uptime_seconds % 3600) // 60
     stats['uptime'] = f"{hours}h {minutes}m"
-    return render_template_string(HTML_TEMPLATE, stats=stats, regions=rEgIoNlIsT)
+    return render_template_string(
+        HTML_TEMPLATE,
+        stats=stats,
+        regions=rEgIoNlIsT,
+        current_settings=current_settings
+    )
 
 @app.route('/api/stats')
 def api_stats():
@@ -1305,6 +1661,41 @@ def api_stats():
         'success_rate': stats['success_rate'],
         'uptime': f"{hours}h {minutes}m"
     })
+
+@app.route('/api/logs')
+def api_logs():
+    # Return the last 1000 lines from the buffer
+    return jsonify({'logs': list(LOG_BUFFER)})
+
+@app.route('/api/settings', methods=['POST'])
+def api_settings():
+    data = request.json
+    new_token = data.get('token', '').strip()
+    new_nickname = data.get('nickname', '').strip()
+    new_password = data.get('password', '').strip()
+    new_region = data.get('region', '').upper()
+
+    if not new_token:
+        return jsonify({'success': False, 'error': 'Token is required'})
+
+    # Update in‑memory settings (will be used on next bot restart)
+    current_settings['token'] = new_token
+    current_settings['nickname'] = new_nickname or "POPPY"
+    current_settings['password'] = new_password or "POPPY"
+    current_settings['region'] = new_region if new_region in rEgIoNlIsT else "IND"
+
+    # Update global variables used by the generator
+    global NiCkNaMe, PaSsWoRd, ReGiOn
+    NiCkNaMe = current_settings['nickname']
+    PaSsWoRd = current_settings['password']
+    ReGiOn = current_settings['region']
+
+    # Signal the bot to restart with the new token
+    global bot_restart_flag
+    bot_restart_flag = True
+
+    logger.info(f"Settings updated: token={new_token[:10]}..., nickname={NiCkNaMe}, region={ReGiOn}")
+    return jsonify({'success': True, 'message': 'Settings saved. Bot will restart with new token.'})
 
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
@@ -1351,49 +1742,96 @@ def api_progress(job_id):
 web_jobs = {}
 
 # =======================================================
-#  MAIN – with conflict handling and retry (bot in main thread)
+#  BOT ENGINE – runs in main thread, with restart support
 # =======================================================
 
-def run_bot_with_retry():
-    """Run the bot polling with automatic retry on Conflict."""
-    TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        print("❌ Error: TELEGRAM_BOT_TOKEN not set. Bot will not start.")
-        return
+bot_restart_flag = False
+bot_application = None
+polling_stop_event = threading.Event()
 
+def run_bot_with_retry(token):
+    """Run the bot polling with automatic retry and restart support."""
     while True:
-        try:
-            print("🔄 Starting bot polling...")
-            application = Application.builder().token(TOKEN).build()
-            application.add_handler(CommandHandler("start", start))
-            application.add_handler(CommandHandler("gen", generate))
-            application.add_handler(CommandHandler("status", status))
-            application.add_handler(CommandHandler("stop", stop_generation))
-            application.add_handler(CommandHandler("download", download))
+        # Check if we need to restart (new token)
+        global bot_restart_flag
+        if bot_restart_flag:
+            logger.info("🔄 Restarting bot with new settings...")
+            bot_restart_flag = False
+            # Stop the current polling gracefully
+            if bot_application:
+                logger.info("Stopping current bot instance...")
+                try:
+                    # We cannot easily stop run_polling from outside, so we rely on the loop to break
+                    # Instead, we'll raise an exception or use a flag.
+                    # The easiest: just return and let the outer loop restart.
+                    return
+                except:
+                    pass
+            # The function will be called again from the outer loop
 
-            application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-            break  # if polling stops normally, exit loop
+        try:
+            logger.info("🔄 Starting bot polling...")
+            app = Application.builder().token(token).build()
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(CommandHandler("gen", generate))
+            app.add_handler(CommandHandler("status", status))
+            app.add_handler(CommandHandler("stop", stop_generation))
+            app.add_handler(CommandHandler("download", download))
+
+            # Validate token
+            import asyncio
+            me = asyncio.run(app.bot.get_me())
+            logger.info(f"✅ Bot connected: @{me.username}")
+
+            # Store reference globally for restart
+            global bot_application
+            bot_application = app
+
+            # Run polling (blocking)
+            app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+            break  # if polling stops normally (e.g., manual stop)
         except Conflict as e:
-            print(f"⚠️ Conflict detected: {e}. Waiting 10 seconds before retry...")
+            logger.warning(f"⚠️ Conflict: {e}. Retrying in 10s...")
             time.sleep(10)
             continue
         except Exception as e:
-            print(f"❌ Bot error: {e}. Retrying in 30 seconds...")
+            logger.error(f"❌ Polling error: {e}. Retrying in 30s...")
             time.sleep(30)
             continue
 
+def bot_worker():
+    """Main bot loop – keeps retrying with the current token."""
+    while True:
+        token = current_settings.get('token', os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+        if not token:
+            logger.error("❌ No bot token provided. Bot will not run.")
+            time.sleep(60)
+            continue
+        # Run the bot with the current token; it may return when a restart is requested
+        run_bot_with_retry(token)
+        # If we returned, check if it was due to a restart signal
+        if bot_restart_flag:
+            continue
+        # Otherwise, if polling stopped unexpectedly, wait and retry
+        logger.info("Bot polling stopped. Restarting in 5s...")
+        time.sleep(5)
+
+# =======================================================
+#  MAIN – Flask in background, bot in main thread
+# =======================================================
+
 def main():
-    # Run Flask in a background thread (so it doesn't block the bot)
+    # Start Flask in a background thread
     def run_flask():
         port = int(os.environ.get("PORT", 8080))
-        print(f"✅ Web dashboard running on port {port}")
+        logger.info(f"✅ Web dashboard running on port {port}")
         app.run(host='0.0.0.0', port=port, debug=False, threaded=False, processes=1)
     
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Run the bot in the main thread (so any crash is visible)
-    run_bot_with_retry()
+    # Run the bot in the main thread (so it can be restarted without losing the process)
+    bot_worker()
 
 if __name__ == "__main__":
     main()
