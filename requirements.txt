@@ -4,3 +4,4 @@ pysocks
 python-cfonts
 python-telegram-bot
 flask
+protobuf
