@@ -48,11 +48,9 @@ class ListHandler(logging.Handler):
 # Configure root logger
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-# Console handler (Render logs)
 console = logging.StreamHandler()
 console.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
 logger.addHandler(console)
-# Buffer handler
 list_handler = ListHandler()
 list_handler.setFormatter(logging.Formatter('%(levelname)s | %(message)s'))
 logger.addHandler(list_handler)
@@ -111,9 +109,14 @@ TOR_AVAILABLE = False
 
 def start_tor():
     global tor_process, TOR_AVAILABLE
+    logger.info("🔄 Attempting to start Tor...")
     try:
-        # Kill any existing tor
-        subprocess.run(['pkill', '-9', 'tor'], capture_output=True, check=False)
+        # Kill any existing tor process (if pkill exists, otherwise skip)
+        try:
+            subprocess.run(['pkill', '-9', 'tor'], capture_output=True, check=False)
+        except FileNotFoundError:
+            # pkill not available – that's okay, we'll just start fresh
+            pass
         time.sleep(1)
         # Start tor
         tor_process = subprocess.Popen(
@@ -147,7 +150,6 @@ def start_tor():
                 logger.info("✅ Tor started successfully and SOCKS proxy is reachable.")
                 return True
             except:
-                # Still starting
                 continue
         logger.warning("⚠️ Tor did not become ready within 30 seconds. Check installation.")
         TOR_AVAILABLE = False
@@ -179,7 +181,6 @@ def renew_tor_ip():
 def get_proxies():
     if TOR_AVAILABLE:
         return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-    # If Tor is not available, we raise an exception to avoid using broken proxies
     raise RuntimeError("Tor is not available. Cannot create accounts without IP rotation.")
 
 # ---------- Session pool ----------
@@ -188,14 +189,22 @@ SESSION_POOL_SIZE = ThReAdS
 
 def init_session_pool():
     global session_pool
+    logger.info(f"🔄 Initializing session pool with {SESSION_POOL_SIZE} sessions...")
     for _ in range(SESSION_POOL_SIZE):
         session = requests.Session()
-        session.proxies.update(get_proxies())
+        try:
+            session.proxies.update(get_proxies())
+        except Exception as e:
+            logger.error(f"❌ Failed to set proxy: {e}")
+            raise
         session.verify = False
         session.timeout = 10
         session_pool.append(session)
+    logger.info("✅ Session pool initialized.")
 
 def get_pool_session():
+    if not session_pool:
+        raise RuntimeError("Session pool is empty.")
     return random.choice(session_pool)
 
 # ---------- Protobuf-like packing and encryption ----------
@@ -724,19 +733,31 @@ class AcCoUnTcReAtOr:
             return None
         session = get_pool_session()
         try:
+            logger.info(f"[Thread-{thread_id}] Starting account creation...")
             store_pass, api_pass = self.gEnPaSs()
+            logger.info(f"[Thread-{thread_id}] Password generated: {api_pass}")
+
             uid = wOw(hAhA, session, api_pass)
-            
+            if not uid:
+                logger.warning(f"[Thread-{thread_id}] Registration returned no UID.")
+                return None
+            logger.info(f"[Thread-{thread_id}] Registered UID: {uid}")
+
             with self.results_lock:
                 if uid in self.saved_uids:
+                    logger.info(f"[Thread-{thread_id}] UID {uid} already exists, skipping.")
                     return None
-            
+
             access_token, open_id = wOw(lMaO, session, uid, api_pass)
+            logger.info(f"[Thread-{thread_id}] Got access token and open_id.")
+
             reg_resp = wOw(gG, session, self.nickname_prefix, access_token, open_id, self.region, self.ghost)
             account_id = reg_resp.get(3)
             if not account_id:
-                raise Exception("No account_id")
+                raise Exception("No account_id from MajorRegister")
             account_id = str(account_id)
+            logger.info(f"[Thread-{thread_id}] MajorRegister success, account_id: {account_id}")
+
             lang_code = rEgIoNlAnG.get(self.region, "en") if not self.ghost else "pt"
             login_resp, jwt_token = wOw(nIcE, session, access_token, open_id, self.region, lang_code)
             if not jwt_token:
@@ -800,6 +821,7 @@ class AcCoUnTcReAtOr:
             with self.results_lock:
                 self.saved_uids.add(uid)
             
+            logger.info(f"[Thread-{thread_id}] Account created: {acc['uid']}")
             return acc
         except Exception as e:
             logger.error(f"[Thread-{thread_id}] Account creation error: {e}")
@@ -822,17 +844,20 @@ class AcCoUnTcReAtOr:
                 with self.lock:
                     self.created_count += 1
                 self.save_single_account(acc)
-                logger.info(f"[Thread-{thread_id}] Account created: {acc['uid']}")
             else:
                 time.sleep(0.1)
         if self.created_count >= self.total_target:
             self.stop = True
 
     def rUn(self, callback=None):
+        logger.info("🔄 Starting account generation process...")
         self.load_existing_uids()
-        start_tor()
-        time.sleep(1)
+        if not start_tor():
+            logger.error("❌ Tor failed to start. Aborting generation.")
+            return
+        logger.info("🔄 Initializing session pool...")
         init_session_pool()
+        logger.info("✅ Session pool ready. Starting workers...")
         
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=ThReAdS) as executor:
@@ -851,6 +876,7 @@ class AcCoUnTcReAtOr:
                     future.cancel()
                 except:
                     pass
+        logger.info("✅ Generation process finished.")
 
 # =======================================================
 #  TELEGRAM BOT INTEGRATION
@@ -1006,7 +1032,7 @@ current_settings = {
     'region': ReGiOn
 }
 
-# ==================== HTML Template ====================
+# ==================== HTML Template with Copy Button ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1457,7 +1483,8 @@ HTML_TEMPLATE = """
             </div>
             <div class="modal-body">
                 <div class="log-viewer" id="fullLogViewer">Loading logs...</div>
-                <div style="margin-top:12px;text-align:right;">
+                <div style="margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
+                    <button class="btn" onclick="copyLogs()" style="padding:8px 16px;font-size:13px;">📋 Copy</button>
                     <button class="btn" onclick="fetchLogs()" style="padding:8px 16px;font-size:13px;">🔄 Refresh</button>
                 </div>
             </div>
@@ -1496,6 +1523,18 @@ HTML_TEMPLATE = """
                 viewer.scrollTop = viewer.scrollHeight;
             } catch (e) {
                 document.getElementById('fullLogViewer').innerHTML = '❌ Failed to load logs.';
+            }
+        }
+
+        // --- Copy Logs ---
+        async function copyLogs() {
+            const viewer = document.getElementById('fullLogViewer');
+            const text = viewer.innerText;
+            try {
+                await navigator.clipboard.writeText(text);
+                alert('✅ Logs copied to clipboard!');
+            } catch (e) {
+                alert('❌ Failed to copy: ' + e.message);
             }
         }
 
@@ -1664,7 +1703,6 @@ def api_stats():
 
 @app.route('/api/logs')
 def api_logs():
-    # Return the last 1000 lines from the buffer
     return jsonify({'logs': list(LOG_BUFFER)})
 
 @app.route('/api/settings', methods=['POST'])
@@ -1678,19 +1716,16 @@ def api_settings():
     if not new_token:
         return jsonify({'success': False, 'error': 'Token is required'})
 
-    # Update in‑memory settings (will be used on next bot restart)
     current_settings['token'] = new_token
     current_settings['nickname'] = new_nickname or "POPPY"
     current_settings['password'] = new_password or "POPPY"
     current_settings['region'] = new_region if new_region in rEgIoNlIsT else "IND"
 
-    # Update global variables used by the generator
     global NiCkNaMe, PaSsWoRd, ReGiOn
     NiCkNaMe = current_settings['nickname']
     PaSsWoRd = current_settings['password']
     ReGiOn = current_settings['region']
 
-    # Signal the bot to restart with the new token
     global bot_restart_flag
     bot_restart_flag = True
 
@@ -1749,22 +1784,17 @@ bot_restart_flag = False
 bot_application = None
 
 def run_bot_once(token):
-    """Run the bot once with a fresh event loop. Returns True if it should restart."""
     global bot_restart_flag, bot_application
     
-    # Check if we need to restart before even starting
     if bot_restart_flag:
         bot_restart_flag = False
-        return True  # signal restart
+        return True
     
     try:
         logger.info("🔄 Starting bot polling...")
-        
-        # Create a NEW event loop for this run
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # Build the application
         app = Application.builder().token(token).build()
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("gen", generate))
@@ -1772,13 +1802,10 @@ def run_bot_once(token):
         app.add_handler(CommandHandler("stop", stop_generation))
         app.add_handler(CommandHandler("download", download))
         
-        # Validate token (run in the new loop)
         me = loop.run_until_complete(app.bot.get_me())
         logger.info(f"✅ Bot connected: @{me.username}")
-        
         bot_application = app
         
-        # Run polling with close_loop=False so we control the loop lifecycle
         loop.run_until_complete(app.initialize())
         loop.run_until_complete(app.start())
         loop.run_until_complete(app.updater.start_polling(
@@ -1786,30 +1813,26 @@ def run_bot_once(token):
             allowed_updates=Update.ALL_TYPES
         ))
         
-        # Keep the loop running until stopped
         try:
             loop.run_forever()
         except KeyboardInterrupt:
             pass
         finally:
-            # Clean shutdown
             loop.run_until_complete(app.updater.stop())
             loop.run_until_complete(app.stop())
             loop.run_until_complete(app.shutdown())
             loop.close()
         
-        # If we get here, polling stopped normally
         logger.info("Bot polling stopped normally.")
-        return False  # don't restart
+        return False
         
     except Conflict as e:
         logger.warning(f"⚠️ Conflict: {e}. Will retry...")
-        return True  # restart
+        return True
     except Exception as e:
         logger.error(f"❌ Polling error: {e}. Will retry...")
-        return True  # restart
+        return True
     finally:
-        # Ensure the loop is closed if it wasn't already
         try:
             if not loop.is_closed():
                 loop.close()
@@ -1817,7 +1840,6 @@ def run_bot_once(token):
             pass
 
 def bot_worker():
-    """Main bot loop – keeps retrying with fresh event loops."""
     while True:
         token = current_settings.get('token', os.environ.get("TELEGRAM_BOT_TOKEN", ""))
         if not token:
@@ -1825,16 +1847,12 @@ def bot_worker():
             time.sleep(60)
             continue
         
-        # Run the bot once – returns True if we should restart
         should_restart = run_bot_once(token)
-        
         if should_restart:
             logger.info("🔄 Restarting bot with fresh event loop...")
-            # Small delay before restart
             time.sleep(2)
             continue
         
-        # If polling stopped without requesting restart, wait and retry
         logger.info("Bot polling stopped. Restarting in 5s...")
         time.sleep(5)
 
@@ -1843,7 +1861,6 @@ def bot_worker():
 # =======================================================
 
 def main():
-    # Start Flask in a background thread
     def run_flask():
         port = int(os.environ.get("PORT", 10000))
         logger.info(f"✅ Web dashboard running on port {port}")
@@ -1852,7 +1869,6 @@ def main():
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Run the bot in the main thread
     bot_worker()
 
 if __name__ == "__main__":
