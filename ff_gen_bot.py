@@ -18,6 +18,7 @@ from flask import Flask, render_template_string, jsonify, request
 # ---------- Telegram imports ----------
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.error import Conflict
 
 # ---------- Install cfonts if missing ----------
 try:
@@ -63,10 +64,24 @@ cOnSeCuTiVe = 0
 pRiNtLoCk = threading.Lock()
 iPlOcK = threading.Lock()
 
-INDIAN_CARRIERS = ["Jio", "Airtel", "Vodafone Idea", "BSNL", "MTNL", "Reliance Jio", "Bharti Airtel", "Vi", "Idea Cellular"]
-INDIAN_CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow", "Kanpur", "Nagpur", "Indore", "Bhopal", "Visakhapatnam", "Patna", "Vadodara", "Surat", "Rajkot", "Chandigarh"]
-INDIAN_DEVICES = ["Asus ASUS_AI2401_A", "Samsung SM-G998B", "OnePlus 9 Pro", "Xiaomi Mi 11", "Google Pixel 6", "Realme GT", "Vivo X70 Pro", "Oppo Find X3", "Motorola Edge 20", "Samsung SM-M515F", "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"]
+INDIAN_CARRIERS = [
+    "Jio", "Airtel", "Vodafone Idea", "BSNL", "MTNL",
+    "Reliance Jio", "Bharti Airtel", "Vi", "Idea Cellular"
+]
+INDIAN_CITIES = [
+    "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai",
+    "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow",
+    "Kanpur", "Nagpur", "Indore", "Bhopal", "Visakhapatnam",
+    "Patna", "Vadodara", "Surat", "Rajkot", "Chandigarh"
+]
+INDIAN_DEVICES = [
+    "Asus ASUS_AI2401_A", "Samsung SM-G998B", "OnePlus 9 Pro",
+    "Xiaomi Mi 11", "Google Pixel 6", "Realme GT", "Vivo X70 Pro",
+    "Oppo Find X3", "Motorola Edge 20", "Samsung SM-M515F",
+    "Samsung SM-A525F", "Redmi Note 10", "OnePlus Nord 2"
+]
 
+# ---------- Tor integration ----------
 tor_process = None
 IP_ROTATION_INTERVAL = 15
 ACCOUNT_COUNTER_FOR_IP_ROTATION = 0
@@ -106,8 +121,12 @@ def renew_tor_ip():
         return False
 
 def get_proxies():
-    return {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+    return {
+        'http': 'socks5h://127.0.0.1:9050',
+        'https': 'socks5h://127.0.0.1:9050'
+    }
 
+# ---------- Session pool ----------
 session_pool = []
 SESSION_POOL_SIZE = ThReAdS
 
@@ -123,6 +142,7 @@ def init_session_pool():
 def get_pool_session():
     return random.choice(session_pool)
 
+# ---------- Protobuf-like packing and encryption ----------
 def FF(value):
     out = []
     while True:
@@ -215,6 +235,7 @@ def Pro(data):
             fields[field_num] = value
     return fields
 
+# ---------- Garena API calls ----------
 def RoFl(session, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest:register"
     payload = {"app_id": 100067, "client_type": 2, "password": password, "source": 2}
@@ -292,7 +313,10 @@ def hAhA(session, password):
 
 def lMaO(session, uid, password):
     url = "https://100067.connect.garena.com/api/v2/oauth/guest/token:grant"
-    payload = {"client_id":100067, "client_secret":cLiEnTsEcReT, "client_type":2, "password":password, "response_type":"token", "uid":uid}
+    payload = {
+        "client_id":100067, "client_secret":cLiEnTsEcReT, "client_type":2,
+        "password":password, "response_type":"token", "uid":uid
+    }
     headers = {"User-Agent": sUs(), "Content-Type": "application/json"}
     resp = session.post(url, json=payload, headers=headers, timeout=10)
     resp.raise_for_status()
@@ -313,10 +337,19 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
     encoded_result = fInE(open_id)
     field_unicode = yAy(encoded_result)
     field_bytes = codecs.decode(field_unicode, 'unicode_escape').encode('latin1')
-    fields_dict = {"1": name, "2": access_token, "3": open_id, "5": 102000007, "6": 4, "7": 1, "13": 1, "14": field_bytes, "15": lang_code, "16": 2}
+    fields_dict = {
+        "1": name, "2": access_token, "3": open_id,
+        "5": 102000007, "6": 4, "7": 1, "13": 1,
+        "14": field_bytes, "15": lang_code, "16": 2
+    }
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
-    headers = {"Accept-Encoding": "gzip", "Authorization": "Bearer", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "Host": host, "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
+    headers = {
+        "Accept-Encoding": "gzip", "Authorization": "Bearer", "Connection": "Keep-Alive",
+        "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue",
+        "Host": host, "ReleaseVersion": "OB54",
+        "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
+    }
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=15)
         resp.raise_for_status()
@@ -363,7 +396,44 @@ def nIcE(session, access_token, open_id, region, lang_code):
         data = v.encode() if isinstance(v, str) else v
         return qT((f << 3) | 2) + qT(len(data)) + data
     
-    fields = {3: now_str, 4: "free fire", 5: 1, 7: "1.126.5", 8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)", 9: "Handheld", 10: carrier, 11: "WIFI", 17: gpu, 18: "OpenGL ES 3.0", 19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603", 20: ip, 21: lang_code, 22: open_id, 23: 4, 24: "Handheld", 25: device_model, 26: region.upper(), 29: access_token, 33: carrier, 34: "WIFI", 37: "7428b253defc164018c604a1ebbfebdf", 73: "/data/app/com.dts.freefireth-1/lib/arm", 75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk", 76: 2, 78: 2, 79: 2, 83: "OpenGLES2", 85: city, 87: "android", 88: "KqsHTywQqGHMgPbDY9P2mhkxXj/beObk/TFNpmgaucQwxyLu9hA478WEQCV0Mgaz9UivYUPpKNwPzgZhvDhSsUDMAFY=", 90: '{"cur_rate":null,"support_etc2":false}', 97: 1, 98: 1, 99: "4", 100: "4"}
+    fields = {
+        3: now_str,
+        4: "free fire",
+        5: 1,
+        7: "1.126.5",
+        8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)",
+        9: "Handheld",
+        10: carrier,
+        11: "WIFI",
+        17: gpu,
+        18: "OpenGL ES 3.0",
+        19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603",
+        20: ip,
+        21: lang_code,
+        22: open_id,
+        23: 4,
+        24: "Handheld",
+        25: device_model,
+        26: region.upper(),
+        29: access_token,
+        33: carrier,
+        34: "WIFI",
+        37: "7428b253defc164018c604a1ebbfebdf",
+        73: "/data/app/com.dts.freefireth-1/lib/arm",
+        75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk",
+        76: 2,
+        78: 2,
+        79: 2,
+        83: "OpenGLES2",
+        85: city,
+        87: "android",
+        88: "KqsHTywQqGHMgPbDY9P2mhkxXj/beObk/TFNpmgaucQwxyLu9hA478WEQCV0Mgaz9UivYUPpKNwPzgZhvDhSsUDMAFY=",
+        90: '{"cur_rate":null,"support_etc2":false}',
+        97: 1,
+        98: 1,
+        99: "4",
+        100: "4"
+    }
     
     packet = b''
     for f, v in fields.items():
@@ -375,7 +445,16 @@ def nIcE(session, access_token, open_id, region, lang_code):
             packet += xX(f, v)
     
     encrypted = Noob(packet)
-    headers = {"Accept-Encoding": "gzip", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
+    headers = {
+        "Accept-Encoding": "gzip", 
+        "Connection": "Keep-Alive",
+        "Content-Type": "application/x-www-form-urlencoded", 
+        "Expect": "100-continue",
+        "ReleaseVersion": "OB54", 
+        "User-Agent": bRuH(),
+        "X-GA": "v1 1", 
+        "X-Unity-Version": "2018.4."
+    }
     resp = session.post(url, headers=headers, data=encrypted, timeout=15)
     resp.raise_for_status()
     decoded = Pro(resp.content)
@@ -393,7 +472,12 @@ def dUdE(session, region_code, jwt_token):
     fields_dict = {"1": region_code}
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
-    headers = {"Accept-Encoding": "gzip", "Authorization": f"Bearer {jwt_token}", "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded", "Expect": "100-continue", "ReleaseVersion": "OB54", "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."}
+    headers = {
+        "Accept-Encoding": "gzip", "Authorization": f"Bearer {jwt_token}",
+        "Connection": "Keep-Alive", "Content-Type": "application/x-www-form-urlencoded",
+        "Expect": "100-continue", "ReleaseVersion": "OB54",
+        "User-Agent": bRuH(), "X-GA": "v1 1", "X-Unity-Version": "2018.4."
+    }
     resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
     return resp.status_code == 200
 
@@ -424,7 +508,37 @@ def bYe(session, jwt_token, client_url):
         data = v.encode() if isinstance(v, str) else v
         return qT((f << 3) | 2) + qT(len(data)) + data
     
-    fields = {3: now_str, 4: "free fire", 5: 1, 7: "1.126.5", 8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)", 9: "Handheld", 10: carrier, 11: "WIFI", 17: gpu, 18: "OpenGL ES 3.0", 19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603", 20: ip, 21: "en", 22: open_id, 23: 4, 24: "Handheld", 25: device_model, 26: "IND", 29: jwt_token, 33: carrier, 34: "WIFI", 37: "7428b253defc164018c604a1ebbfebdf", 73: "/data/app/com.dts.freefireth-1/lib/arm", 75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk", 83: "OpenGLES2", 85: city, 87: "android", 88: "KqsHT8nWdkA7u/m7k8vg2H5FgrCGa4lfww3nHBGRHRPwDFV4LyCj8sT23O/P6K06qC3MOLZRThwWwul+g2goHwtQJy8=", 90: '{"cur_rate":null,"support_etc2":false}'}
+    fields = {
+        3: now_str,
+        4: "free fire",
+        5: 1,
+        7: "1.126.5",
+        8: "Android OS 5.1.1 / API-22 (LMY48Z/rel.se.infra.20220128.171448)",
+        9: "Handheld",
+        10: carrier,
+        11: "WIFI",
+        17: gpu,
+        18: "OpenGL ES 3.0",
+        19: "Google|4645e530-e790-4be2-ae7c-6f64d1259603",
+        20: ip,
+        21: "en",
+        22: open_id,
+        23: 4,
+        24: "Handheld",
+        25: device_model,
+        26: "IND",
+        29: jwt_token,
+        33: carrier,
+        34: "WIFI",
+        37: "7428b253defc164018c604a1ebbfebdf",
+        73: "/data/app/com.dts.freefireth-1/lib/arm",
+        75: "H4c322aeb56444feaa151d1ea91a8f7f2|/data/app/com.dts.freefireth-1/base.apk",
+        83: "OpenGLES2",
+        85: city,
+        87: "android",
+        88: "KqsHT8nWdkA7u/m7k8vg2H5FgrCGa4lfww3nHBGRHRPwDFV4LyCj8sT23O/P6K06qC3MOLZRThwWwul+g2goHwtQJy8=",
+        90: '{"cur_rate":null,"support_etc2":false}'
+    }
     
     packet = b''
     for f, v in fields.items():
@@ -436,7 +550,18 @@ def bYe(session, jwt_token, client_url):
             packet += xX(f, v)
     
     encrypted_payload = Noob(packet)
-    headers = {'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 12)", 'Connection': "Keep-Alive", 'Accept-Encoding': "gzip", 'Content-Type': "application/x-www-form-urlencoded", 'Authorization': f"Bearer {jwt_token}", 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"}
+    
+    headers = {
+        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 12)",
+        'Connection': "Keep-Alive",
+        'Accept-Encoding': "gzip",
+        'Content-Type': "application/x-www-form-urlencoded",
+        'Authorization': f"Bearer {jwt_token}",
+        'X-Unity-Version': "2018.4.11f1",
+        'X-GA': "v1 1",
+        'ReleaseVersion': "OB54"
+    }
+    
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=10)
         return resp.status_code == 200
@@ -607,7 +732,14 @@ class AcCoUnTcReAtOr:
             final_region = lock_region if lock_region and not self.ghost else "GHOST"
             stored_password = store_pass
             
-            acc = {"nickname": nickname, "game_uid": account_id, "region": final_region, "uid": str(uid), "password": stored_password, "activated": activated}
+            acc = {
+                "nickname": nickname,
+                "game_uid": account_id,
+                "region": final_region,
+                "uid": str(uid),
+                "password": stored_password,
+                "activated": activated
+            }
             
             with self.results_lock:
                 self.saved_uids.add(uid)
@@ -730,7 +862,15 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_path = os.path.join(folder, f"Accounts-{region}.txt")
         user_jobs[user_id]['file_path'] = file_path
     
-    user_jobs[user_id] = {'thread': threading.Thread(target=run_gen), 'generator': gen, 'done': False, 'file_path': None, 'region': region, 'total': total}
+    user_jobs[user_id] = {
+        'thread': threading.Thread(target=run_gen),
+        'generator': gen,
+        'done': False,
+        'file_path': None,
+        'region': region,
+        'total': total
+    }
+    
     user_jobs[user_id]['thread'].start()
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -929,7 +1069,7 @@ HTML_TEMPLATE = """
         }
         .controls {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 16px;
             background: rgba(255, 255, 255, 0.02);
             padding: 24px;
@@ -1095,7 +1235,6 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 if (data.success) {
                     addLog(`✅ Generation started! Job ID: ${data.job_id}`, true);
-                    // Start polling for progress
                     pollProgress(data.job_id);
                 } else {
                     addLog(`❌ Error: ${data.error}`, true);
@@ -1149,7 +1288,6 @@ HTML_TEMPLATE = """
 # ---------- Flask Routes ----------
 @app.route('/')
 def index():
-    # Calculate uptime
     uptime_seconds = int((datetime.now() - stats['start_time']).total_seconds())
     hours = uptime_seconds // 3600
     minutes = (uptime_seconds % 3600) // 60
@@ -1175,7 +1313,6 @@ def api_generate():
     total = data.get('total', 10)
     threads = data.get('threads', 5)
     
-    # Validate
     if region not in rEgIoNlIsT:
         return jsonify({'success': False, 'error': 'Invalid region'})
     if total < 1 or total > 500:
@@ -1186,7 +1323,6 @@ def api_generate():
     job_id = f"web_{int(time.time())}"
     stats['active_users'] += 1
     
-    # Start generation in background
     def run_web_gen():
         global ThReAdS
         ThReAdS = threads
@@ -1194,7 +1330,6 @@ def api_generate():
         gen.rUn()
         stats['total_accounts'] += total
         stats['active_users'] = max(0, stats['active_users'] - 1)
-        # Store result for progress polling
         web_jobs[job_id] = {'done': True, 'total': total, 'progress': total}
     
     web_jobs[job_id] = {'done': False, 'total': total, 'progress': 0}
@@ -1216,36 +1351,47 @@ def api_progress(job_id):
 web_jobs = {}
 
 # =======================================================
-#  MAIN – Bot + Web Server
+#  MAIN – with conflict handling and retry
 # =======================================================
 
-def run_bot():
+def run_bot_with_retry():
+    """Run the bot polling with automatic retry on Conflict."""
     TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
-        print("❌ Error: Please set TELEGRAM_BOT_TOKEN environment variable.")
-        sys.exit(1)
-    
-    banner()
-    print("Starting Telegram bot...")
-    
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("gen", generate))
-    application.add_handler(CommandHandler("status", status))
-    application.add_handler(CommandHandler("stop", stop_generation))
-    application.add_handler(CommandHandler("download", download))
-    
-    application.run_polling()
+        print("❌ Error: TELEGRAM_BOT_TOKEN not set.")
+        return
+
+    while True:
+        try:
+            print("🔄 Starting bot polling...")
+            application = Application.builder().token(TOKEN).build()
+            application.add_handler(CommandHandler("start", start))
+            application.add_handler(CommandHandler("gen", generate))
+            application.add_handler(CommandHandler("status", status))
+            application.add_handler(CommandHandler("stop", stop_generation))
+            application.add_handler(CommandHandler("download", download))
+
+            # Run polling with drop_pending_updates to release previous lock
+            application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+            break  # exit loop if successful (run_polling blocks until stopped)
+        except Conflict as e:
+            print(f"⚠️ Conflict detected: {e}. Waiting 10 seconds before retry...")
+            time.sleep(10)
+            continue
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}. Retrying in 30 seconds...")
+            time.sleep(30)
+            continue
 
 def main():
-    # Start the bot in a background thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    # Start the bot in a separate thread
+    bot_thread = threading.Thread(target=run_bot_with_retry, daemon=True)
     bot_thread.start()
-    
-    # Run Flask web server
+
+    # Run Flask web server (single-threaded to avoid multiple polling attempts)
     port = int(os.environ.get("PORT", 8080))
     print(f"✅ Web dashboard running on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=False, processes=1)
 
 if __name__ == "__main__":
     main()
