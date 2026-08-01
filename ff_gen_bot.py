@@ -359,7 +359,9 @@ def wOw(func, session, *args, max_retries=3, **kwargs):
     for attempt in range(max_retries):
         try:
             return func(session, *args, **kwargs)
-        except:
+        except Exception as e:
+            # We now properly log the reason for the retry to avoid silent failures
+            logger.warning(f"⚠️ [wOw] Retry {attempt+1}/{max_retries} due to: {repr(e)}")
             if attempt == max_retries - 1:
                 raise
             time.sleep(0.5)
@@ -392,6 +394,7 @@ def lMaO(session, uid, password):
         logger.error(f"lMaO exception: {e}")
         raise
 
+# ---------- FIXED gG function (Authorization header now includes token) ----------
 def gG(session, name, access_token, open_id, region, is_ghost=False):
     global cOnSeCuTiVe
     url = "https://loginbp.ggpolarbear.com/MajorRegister"
@@ -416,13 +419,15 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
         "15": lang_code,
         "16": 2
     }
-    # Log fields for debugging
-    logger.info(f"[gG] name={name}, access_token={access_token[:20]}..., open_id={open_id}, lang_code={lang_code}")
+    
+    logger.info(f"[gG] name={name}, access_token={access_token[:15]}..., open_id={open_id}, lang_code={lang_code}")
     plaintext = xPro(fields_dict)
     encrypted_payload = Noob(plaintext)
+    
+    # FIX: Include the access_token in the Authorization header
     headers = {
         "Accept-Encoding": "gzip",
-        "Authorization": "Bearer",
+        "Authorization": f"Bearer {access_token}",
         "Connection": "Keep-Alive",
         "Content-Type": "application/x-www-form-urlencoded",
         "Expect": "100-continue",
@@ -432,6 +437,7 @@ def gG(session, name, access_token, open_id, region, is_ghost=False):
         "X-GA": "v1 1",
         "X-Unity-Version": "2018.4."
     }
+    
     try:
         resp = session.post(url, headers=headers, data=encrypted_payload, timeout=15)
         if resp.status_code != 200:
@@ -1872,7 +1878,7 @@ def bot_worker():
         should_restart = run_bot_once(token)
         if should_restart:
             logger.info("🔄 Restarting bot with fresh event loop...")
-            time.sleep(10)
+            time.sleep(2)
             continue
         
         logger.info("Bot polling stopped. Restarting in 5s...")
