@@ -1872,7 +1872,7 @@ def bot_worker():
         should_restart = run_bot_once(token)
         if should_restart:
             logger.info("🔄 Restarting bot with fresh event loop...")
-            time.sleep(2)
+            time.sleep(10)
             continue
         
         logger.info("Bot polling stopped. Restarting in 5s...")
